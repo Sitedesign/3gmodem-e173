@@ -1,0 +1,110 @@
+#!/bin/bash
+#
+# Script to start USB modem
+# for HUAWEI E173
+#
+# Sun Sep  7 23:00:00 CEST 2014         csanyi.krisztian@sitedesign.hu
+#
+
+TTY=/dev/ttyUSB0
+BAUD=406800
+APN=internet
+PIN=1111
+VENDOR="12d1"
+PRODUCT="1c0b"
+MCONT="55534243123456780000000000000011062000000100000000000000000000"
+
+PPPD="/usr/sbin/pppd"
+PPP_IFACE=ppp0
+ARGS="modem crtscts defaultroute usehostname noauth noipdefault usepeerdns passive idle 0 logfd 6"
+PROG=`basename $0`
+LOGGER="logger -t $PROG -p local0.info --"
+
+# set -x # Uncomment to debug scripts
+set -e # Exit on fault in script
+
+send() {
+	echo -ne '.'
+	echo -ne $1'\r\n' > $TTY
+	sleep 1
+}
+
+pidfile() {
+	echo $2 >/var/run/$PROG.$1.pid
+}
+
+killpidfile() {
+	PIDFILE="/var/run/$PROG.$1.pid"
+	PID=`cat $PIDFILE`
+	kill $PID
+	rm -f $PIDFILE
+}
+
+modem_start() {
+	# The modem command logger process 
+	( cat $TTY | $LOGGER ) &
+	PID=$!
+
+	echo 'Initializing 3G modem'
+	stty -F $TTY ispeed $BAUD ospeed $BAUD -echo
+
+	# Reset
+	send 'ATZ'
+	send 'AT&F'
+
+	# Prepare to work
+	send 'AT+CFUN=1'
+	send 'AT+CMEE=2'
+	send 'AT+CPIN='$PIN
+	send 'AT+CSQ'
+
+	# Print out available networks
+	send 'AT+COPS?'
+
+	# connects to the service
+	send 'AT^NDISDUP=1,1,"'$APN'"'
+	send 'ATDT*99***1#'
+
+	# start PPP daemon
+	echo
+	echo "Starting PPP daemon"
+	$PPPD $TTY $SPEED $ARGS
+
+	# create PID files
+	pidfile "main" "$PID"
+}
+
+modem_stop() {
+	echo -ne "Killing main, status and PPP process..."
+	killpidfile "main"
+	kill `cat /var/run/$PPP_IFACE.pid`
+	echo "ok"
+}
+
+modem_status() {
+	# stty -F /dev/ttyUSB2 ispeed $BAUD ospeed $BAUD -echo
+	# echo -ne 'AT+CSQ\r\n' >/dev/ttyUSB2
+	# sleep 1
+	# RSSI=`cat /dev/ttyUSB2 | grep -m 1 "CSQ:" | cut -f2 -d" " | cut -f1 -d","`
+	# echo "Signal strength: $RSSI"
+	ifconfig $PPP_IFACE | fgrep "RX bytes" | sed 's/^ *//'
+}
+
+case $1 in
+	start)
+		modem_start
+		;;
+	stop)
+		modem_stop
+		;;
+	status)
+		modem_status
+		;;
+	modeswitch)
+		usb_modeswitch --default-vendor $VENDOR --default-product $PRODUCT --message-content $MCONT
+		;;
+	*)
+		echo "Usage: $0 {start|stop|modeswitch|status}"
+		exit 2
+		;;
+esac
