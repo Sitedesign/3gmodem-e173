@@ -11,7 +11,7 @@ HUAWEI E173 start/stop script for Debian based systems.
 
 ### Install
 Copy 3gmodem-e173 file to /usr/local/bin and make it executable.
-Edit the parameters in the script for your need.
+Edit the parameters in the script for your needs.
 
 ### Usage
 Start modem and establish PPP connection:
